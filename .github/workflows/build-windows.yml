@@ -14,14 +14,23 @@ jobs:
           submodules: recursive
 
       - name: Install GStreamer
+        shell: pwsh
         run: |
-          choco install -y gstreamer --version 1.24.11
-          choco install -y gstreamer-devel --version 1.24.11
+          $base = 'https://gstreamer.freedesktop.org/data/pkg/windows/1.24.13/msvc'
+          foreach ($m in 'gstreamer-1.0-msvc-x86_64-1.24.13.msi','gstreamer-1.0-devel-msvc-x86_64-1.24.13.msi') {
+            Invoke-WebRequest "$base/$m" -OutFile "$env:RUNNER_TEMP\$m"
+            $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList '/i',"`"$env:RUNNER_TEMP\$m`"",'/qn','ADDLOCAL=ALL','INSTALLDIR=D:\gstreamer'
+            if ($p.ExitCode -ne 0) { throw "msiexec $m exit $($p.ExitCode)" }
+          }
+          $root = (Get-ChildItem D:\gstreamer -Recurse -Filter gstreamer-1.0.lib | Select-Object -First 1).Directory.Parent.FullName
+          if (-not $root) { throw 'GStreamer root not found' }
+          "GSTREAMER_ROOT=$root" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Write-Host "GStreamer root: $root"
 
       - name: Configure environment
         run: |
-          cmake -A x64 -B .\RetroFE\Build -D GSTREAMER_ROOT=D:\gstreamer\1.0\msvc_x86_64 -S .\RetroFE\Source
-  
+          cmake -A x64 -B .\RetroFE\Build -D GSTREAMER_ROOT=$env:GSTREAMER_ROOT -S .\RetroFE\Source
+
       - name: Build RetroFE
         run: |
           cmake --build RetroFE/Build --config Release
